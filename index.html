@@ -2023,6 +2023,21 @@
       line-height: 1.88;
       margin-bottom: 18px;
     }
+    .modal-article-photo {
+      margin: 26px 0;
+    }
+    .modal-article-photo img {
+      width: 100%;
+      display: block;
+      border-radius: var(--radius-m);
+    }
+    .modal-article-photo figcaption {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      text-align: center;
+      line-height: 1.5;
+    }
     .modal-prayer-box {
       margin-top: 26px;
       padding: 18px 22px;
@@ -2466,6 +2481,21 @@
       font-size: 10px;
       cursor: pointer;
       line-height: 1;
+    }
+    .admin-photo-thumb .idx-badge {
+      position: absolute;
+      bottom: 2px; left: 2px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     @media (max-width: 720px) {
       .admin-topbar { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -4553,6 +4583,29 @@
         return buildSlideSVG(slide);
       }
 
+      /* 본문 중간에 [사진:N] 표기가 단독으로 들어간 문단을 실제 사진으로 치환해서 렌더링.
+         N은 글쓰기 화면의 "사진" 목록 번호(1부터 시작)와 같음. 일치하는 사진이 없으면 그냥 텍스트로 표시. */
+      function renderBodyWithInlinePhotos(post, lang) {
+        const photoMarker = /^\[(?:사진|photo|foto)\s*:?\s*(\d+)\]$/i;
+        return (post.body[lang] || []).map(function (para) {
+          const trimmed = (para || '').trim();
+          const m = trimmed.match(photoMarker);
+          if (m) {
+            const slide = post.slides[parseInt(m[1], 10) - 1];
+            if (slide) {
+              const captionText = (slide.caption && slide.caption[lang]) || '';
+              return (
+                '<figure class="modal-article-photo">' +
+                  renderSlideMedia(slide) +
+                  (captionText ? '<figcaption>' + captionText + '</figcaption>' : '') +
+                '</figure>'
+              );
+            }
+          }
+          return '<p>' + para + '</p>';
+        }).join('');
+      }
+
       /* 1. 준비 여정 렌더링 */
       function renderJourney(containerId) {
         const el = document.getElementById(containerId);
@@ -5206,40 +5259,17 @@
           '<span class="topic-tag cat-' + post.category + '">' + getCategoryLabel(post.category, lang) + '</span>' +
           '<span class="blog-date">' + post.date + '</span>';
 
-        /* 상단 비주얼 및 다중 사진 슬라이드 처리 */
+        /* 상단 비주얼: 대표 사진(슬라이드 1) 한 장만 고정 노출. 나머지 사진은 본문 중간에 [사진:N] 표기로 삽입 (아래 renderBodyWithInlinePhotos) */
         const mediaEl = document.getElementById('modal-media-area');
-        const slide = post.slides[currentSlideIndex] || post.slides[0];
-        let thumbsHTML = '';
-        if (post.slides.length > 1) {
-          const photoWord = { ko: '사진', en: 'Photo', es: 'Foto' }[lang];
-          thumbsHTML =
-            '<div class="modal-thumbs">' +
-              post.slides.map(function (_, sIdx) {
-                const activeCls = sIdx === currentSlideIndex ? ' active' : '';
-                return '<button type="button" class="modal-thumb-btn' + activeCls + '" data-slide-idx="' + sIdx + '">📷 ' + photoWord + ' ' + (sIdx + 1) + '</button>';
-              }).join('') +
-            '</div>';
-        }
-
+        const heroSlide = post.slides[0];
         mediaEl.innerHTML =
-          '<div class="modal-slide-stage">' + renderSlideMedia(slide) + '</div>' +
+          '<div class="modal-slide-stage">' + renderSlideMedia(heroSlide) + '</div>' +
           '<div class="modal-slide-caption">' +
-            '<span>' + slide.caption[lang] + '</span>' +
-            (post.slides.length > 1 ? '<span>' + (currentSlideIndex + 1) + ' / ' + post.slides.length + '</span>' : '') +
-          '</div>' +
-          thumbsHTML;
-
-        mediaEl.querySelectorAll('[data-slide-idx]').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            currentSlideIndex = parseInt(btn.getAttribute('data-slide-idx'), 10) || 0;
-            renderPostModalContent();
-          });
-        });
+            '<span>' + heroSlide.caption[lang] + '</span>' +
+          '</div>';
 
         document.getElementById('modal-post-title').textContent = post.title[lang];
-        document.getElementById('modal-post-body').innerHTML = (post.body[lang] || []).map(function (para) {
-          return '<p>' + para + '</p>';
-        }).join('');
+        document.getElementById('modal-post-body').innerHTML = renderBodyWithInlinePhotos(post, lang);
 
         const prayerEl = document.getElementById('modal-post-prayer');
         if (post.prayer && post.prayer[lang]) {
@@ -5943,11 +5973,11 @@
             return langPane('pe', lg,
               '<div class="admin-field"><label>제목</label><input type="text" id="pe-title-' + lg + '" value="' + escapeAttr(d.title[lg]) + '"></div>' +
               '<div class="admin-field"><label>요약 (카드에 표시)</label><textarea id="pe-summary-' + lg + '">' + escapeHtml(d.summary[lg]) + '</textarea></div>' +
-              '<div class="admin-field"><label>본문 <span class="admin-hint">문단 사이는 빈 줄로 구분하세요</span></label><textarea id="pe-body-' + lg + '" style="min-height:140px;">' + escapeHtml(bodyToText(d.body[lg])) + '</textarea></div>' +
+              '<div class="admin-field"><label>본문 <span class="admin-hint">문단 사이는 빈 줄로 구분하세요. 사진을 그 자리에 넣고 싶으면 단독 줄로 [사진:1] 처럼 아래 사진 번호를 적으세요.</span></label><textarea id="pe-body-' + lg + '" style="min-height:140px;">' + escapeHtml(bodyToText(d.body[lg])) + '</textarea></div>' +
               '<div class="admin-field"><label>기도 제목 <span class="admin-hint">선택 사항</span></label><textarea id="pe-prayer-' + lg + '">' + escapeHtml(d.prayer[lg] || '') + '</textarea></div>'
             );
           }).join('') +
-          '<div class="admin-field"><label>사진 (여러 장 첨부 가능 — 올리면 자동으로 웹에 적합한 크기로 압축 후 업로드됩니다)</label>' +
+          '<div class="admin-field"><label>사진 (여러 장 첨부 가능 — 올리면 자동으로 웹에 적합한 크기로 압축 후 업로드됩니다) <span class="admin-hint">사진 1번은 글 상단 대표 사진으로 쓰이고, 번호는 본문의 [사진:N] 표기와 연결됩니다</span></label>' +
             '<input type="file" accept="image/*" id="pe-photo-input">' +
             ' <span class="admin-hint" id="pe-photo-uploading" style="display:none;">업로드 중…</span>' +
             '<div class="admin-photo-grid" id="pe-photo-grid"></div>' +
@@ -6026,7 +6056,7 @@
         const d = editingPostDraft;
         grid.innerHTML = d.slides.map(function (s, i) {
           const thumbSrc = s.photo || ('data:image/svg+xml;utf8,' + encodeURIComponent(buildSlideSVG(s)));
-          return '<div class="admin-photo-thumb"><img src="' + thumbSrc + '"><button type="button" data-del-slide="' + i + '">✕</button></div>';
+          return '<div class="admin-photo-thumb"><img src="' + thumbSrc + '"><span class="idx-badge">' + (i + 1) + '</span><button type="button" data-del-slide="' + i + '">✕</button></div>';
         }).join('');
         grid.querySelectorAll('[data-del-slide]').forEach(function (btn) {
           btn.addEventListener('click', function () {
